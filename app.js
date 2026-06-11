@@ -666,6 +666,29 @@ function wireSettings() {
       map.fitBounds(youCircle.getBounds(), { animate: false, padding: [48, 48] });
     }
   };
+  // refit during drag, rAF-throttled, and only when the required zoom level
+  // actually changes — re-rendering the tile pyramid on every input tick is
+  // what makes dragging feel laggy
+  let refitQueued = false;
+  const refitDuringDrag = () => {
+    if (refitQueued) return;
+    refitQueued = true;
+    requestAnimationFrame(() => {
+      refitQueued = false;
+      if (!youCircle) return;
+      const u = userLoc();
+      const target = isWholeEarth(settings.radiusMi)
+        ? map.getMinZoom()
+        : map.getBoundsZoom(youCircle.getBounds(), false, L.point(48, 48));
+      if (target !== map.getZoom()) {
+        map.setView([u ? u.lat : 20, u ? viewLon(u.lon) : 0], target, { animate: false });
+      }
+    });
+  };
+  // settings write + 100-row list rebuild are deferred until the drag pauses
+  let commitTimer = null;
+  const commitRadius = () => { clearTimeout(commitTimer); saveSettings(); renderList(); };
+  const scheduleCommit = () => { clearTimeout(commitTimer); commitTimer = setTimeout(commitRadius, 350); };
   const startAdjust = () => {
     clearTimeout(adjustEndTimer);
     const modal = $("settings-modal");
@@ -673,14 +696,15 @@ function wireSettings() {
       modal.classList.add("adjusting");
       if (youCircle) youCircle.setStyle({ opacity: .85, weight: 2, fillOpacity: .12 });
       if (!userLoc()) toast("Set your location to preview the alert radius");
+      fitToRadius(); // full fit once on entry; afterwards only zoom-level changes refit
     }
-    fitToRadius();
   };
   const endAdjust = (delay) => {
     clearTimeout(adjustEndTimer);
     adjustEndTimer = setTimeout(() => {
       $("settings-modal").classList.remove("adjusting");
       if (youCircle) youCircle.setStyle({ opacity: .5, weight: 1, fillOpacity: .05 });
+      commitRadius();
     }, delay);
   };
   radiusSlider.addEventListener("pointerdown", () => { radiusPointerDown = true; startAdjust(); });
@@ -688,10 +712,12 @@ function wireSettings() {
   window.addEventListener("pointerup", releaseAdjust);
   window.addEventListener("pointercancel", releaseAdjust);
   radiusSlider.oninput = (e) => {
-    settings.radiusMi = sliderToRadius(Number(e.target.value)); saveSettings();
+    settings.radiusMi = sliderToRadius(Number(e.target.value));
     updateRadiusLabel(); // not syncSettingsUI — re-snapping the slider mid-drag would fight the pointer
-    drawYou(); renderList();
+    drawYou();           // circle radius update — cheap
     startAdjust();
+    refitDuringDrag();
+    scheduleCommit();
     if (!radiusPointerDown) endAdjust(1300); // keyboard arrows: linger, then restore
   };
   $("set-minmag").oninput = (e) => { settings.minMag = Number(e.target.value); saveSettings(); syncSettingsUI(); };
