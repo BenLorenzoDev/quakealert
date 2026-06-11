@@ -66,10 +66,10 @@
           <button class="icon-btn modal-close" data-close="settings-modal" aria-label="Close">&times;</button>
         </div>
         <div class="modal-body">
-          <div class="field">
+          <div class="field field-radius">
             <label for="set-radius">Alert distance: <strong id="radius-val"></strong></label>
             <input type="range" id="set-radius" min="50" max="3000" step="50">
-            <div class="hint">Notify me when an earthquake happens within this distance of my location.</div>
+            <div class="hint">Notify me when an earthquake happens within this distance of my location. Drag to preview the covered area on the map.</div>
           </div>
           <div class="field">
             <label for="set-minmag">Minimum magnitude: <strong id="minmag-val"></strong></label>
@@ -81,6 +81,16 @@
             <select id="set-units">
               <option value="mi">miles</option>
               <option value="km">kilometers</option>
+            </select>
+          </div>
+          <div class="field row">
+            <label for="set-basemap">Map style</label>
+            <select id="set-basemap">
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+              <option value="streets">Streets</option>
+              <option value="satellite">Satellite</option>
+              <option value="terrain">Terrain</option>
             </select>
           </div>
           <div class="field row">

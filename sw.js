@@ -29,7 +29,8 @@ self.addEventListener("fetch", (e) => {
   // live data: network only, never cache
   if (url.hostname.includes("earthquake.usgs.gov") || url.hostname.includes("seismicportal.eu")) return;
   // map tiles: network first, fall back to cache
-  if (url.hostname.includes("cartocdn.com") || url.hostname.includes("tile.openstreetmap.org")) {
+  if (url.hostname.includes("cartocdn.com") || url.hostname.includes("tile.openstreetmap.org") ||
+      url.hostname.includes("arcgisonline.com") || url.hostname.includes("opentopomap.org")) {
     e.respondWith(
       fetch(e.request)
         .then((res) => {

@@ -189,6 +189,31 @@ html, body {
 .switch input:checked + .slider { background: rgba(61,220,132,.25); border-color: var(--ok); }
 .switch input:checked + .slider::before { transform: translateX(20px); background: var(--ok); }
 
+/* While dragging the alert-distance slider the dialog gets out of the way:
+   backdrop clears, every other control collapses, and only the slider remains
+   as a floating pill at the bottom so the radius circle is visible on the map */
+.modal.adjusting { background: transparent; backdrop-filter: none; align-items: flex-end; }
+.modal.adjusting .modal-card {
+  background: transparent; border-color: transparent; box-shadow: none;
+  overflow: visible; padding-bottom: calc(20px + var(--safe-bottom));
+}
+.modal.adjusting .modal-head,
+.modal.adjusting .modal-body > .field:not(.field-radius),
+.modal.adjusting .about {
+  max-height: 0; opacity: 0; margin: 0; padding: 0; overflow: hidden; pointer-events: none;
+}
+.modal.adjusting .field-radius {
+  background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+  padding: 14px 18px 16px; box-shadow: var(--shadow); margin: 0;
+}
+.modal.adjusting .field-radius label {
+  display: block; text-align: center; font-size: 13px; color: var(--muted);
+}
+.modal.adjusting .field-radius label strong {
+  display: block; font-size: 28px; font-weight: 800; color: var(--accent-2); margin-top: 2px;
+}
+.modal.adjusting .field-radius .hint { display: none; }
+
 .btn {
   border: none; border-radius: 12px; padding: 12px 18px;
   font-size: 14px; font-weight: 600; cursor: pointer;

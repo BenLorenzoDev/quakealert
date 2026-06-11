@@ -12,12 +12,42 @@ const ALERT_FRESH_MS = 30 * 60_000; // only alert for quakes younger than 30 min
 const MAX_EVENTS = 600;
 const KM_PER_MI = 1.609344;
 
+const OSM_CARTO_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
+const BASEMAPS = {
+  dark: {
+    url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    options: { attribution: OSM_CARTO_ATTR, subdomains: "abcd", maxZoom: 19 },
+    bg: "#0a0d12",
+  },
+  light: {
+    url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+    options: { attribution: OSM_CARTO_ATTR, subdomains: "abcd", maxZoom: 19 },
+    bg: "#e8e8e6",
+  },
+  streets: {
+    url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+    options: { attribution: OSM_CARTO_ATTR, subdomains: "abcd", maxZoom: 19 },
+    bg: "#cfe3f5",
+  },
+  satellite: {
+    url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+    options: { attribution: "&copy; <a href=\"https://www.esri.com\">Esri</a> &mdash; Maxar, Earthstar Geographics", maxZoom: 19 },
+    bg: "#0a0d12",
+  },
+  terrain: {
+    url: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+    options: { attribution: OSM_CARTO_ATTR + ' &copy; <a href="https://opentopomap.org">OpenTopoMap</a>', subdomains: "abc", maxZoom: 17 },
+    bg: "#dfe9dc",
+  },
+};
+
 const DEFAULTS = {
   radiusMi: 1000,
   minMag: 4.0,
   units: "mi",
   notify: false,
   sound: true,
+  basemap: "dark",
   userLat: null,
   userLon: null,
   locSource: null, // "gps" | "manual"
@@ -27,7 +57,7 @@ const DEFAULTS = {
 let settings = loadSettings();
 const events = new Map();      // id -> event
 const alerted = new Set(JSON.parse(localStorage.getItem("qa_alerted") || "[]"));
-let map, youMarker, youCircle, selectedFeltCircle = null;
+let map, baseLayer, youMarker, youCircle, selectedFeltCircle = null;
 let wsOk = false, pollOk = false, ws = null, wsRetry = 1000;
 let activeAlert = null;        // event currently shown in alert overlay
 let countdownTimer = null;
@@ -141,10 +171,7 @@ function initMap() {
   // overlays are re-anchored to the visible world copy on every move (rewrapOverlays)
   map.setMaxBounds([[-85, -1e7], [85, 1e7]]);
   map.on("moveend", rewrapOverlays);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    subdomains: "abcd", maxZoom: 19,
-  }).addTo(map);
+  applyBasemap();
 
   // a map tap sets your location only when none exists yet, or when explicitly
   // armed via the settings button — stray taps must never move you silently
@@ -155,6 +182,18 @@ function initMap() {
       toast("📍 Location set");
     }
   });
+}
+
+function applyBasemap() {
+  const bm = BASEMAPS[settings.basemap] || BASEMAPS.dark;
+  if (baseLayer) baseLayer.remove();
+  baseLayer = L.tileLayer(bm.url, bm.options).addTo(map);
+  baseLayer.bringToBack();
+  $("map").style.background = bm.bg; // fills tile-load gaps and the clamped poles
+  if (map.getMaxZoom() !== bm.options.maxZoom) {
+    map.setMaxZoom(bm.options.maxZoom);
+    if (map.getZoom() > bm.options.maxZoom) map.setZoom(bm.options.maxZoom);
+  }
 }
 
 function setUserLocation(lat, lon, source) {
@@ -541,6 +580,7 @@ function syncSettingsUI() {
   $("set-minmag").value = settings.minMag;
   $("minmag-val").textContent = "M " + Number(settings.minMag).toFixed(1);
   $("set-units").value = settings.units;
+  $("set-basemap").value = BASEMAPS[settings.basemap] ? settings.basemap : "dark";
   $("set-notify").checked = settings.notify && Notification?.permission === "granted";
   $("set-sound").checked = settings.sound;
 }
@@ -550,12 +590,43 @@ function wireSettings() {
   document.querySelectorAll("[data-close]").forEach((b) => b.onclick = () => $(b.dataset.close).classList.add("hidden"));
   $("settings-modal").addEventListener("click", (e) => { if (e.target.id === "settings-modal") $("settings-modal").classList.add("hidden"); });
 
-  $("set-radius").oninput = (e) => {
+  // alert-distance slider: while adjusting, ghost the dialog and fit the map
+  // to the radius circle so the user sees exactly what the distance covers
+  const radiusSlider = $("set-radius");
+  let adjustEndTimer = null, radiusPointerDown = false;
+  const fitToRadius = () => {
+    if (youCircle) map.fitBounds(youCircle.getBounds(), { animate: false, padding: [48, 48] });
+  };
+  const startAdjust = () => {
+    clearTimeout(adjustEndTimer);
+    const modal = $("settings-modal");
+    if (!modal.classList.contains("adjusting")) {
+      modal.classList.add("adjusting");
+      if (youCircle) youCircle.setStyle({ opacity: .85, weight: 2, fillOpacity: .12 });
+      if (!userLoc()) toast("Set your location to preview the alert radius");
+    }
+    fitToRadius();
+  };
+  const endAdjust = (delay) => {
+    clearTimeout(adjustEndTimer);
+    adjustEndTimer = setTimeout(() => {
+      $("settings-modal").classList.remove("adjusting");
+      if (youCircle) youCircle.setStyle({ opacity: .5, weight: 1, fillOpacity: .05 });
+    }, delay);
+  };
+  radiusSlider.addEventListener("pointerdown", () => { radiusPointerDown = true; startAdjust(); });
+  const releaseAdjust = () => { if (radiusPointerDown) { radiusPointerDown = false; endAdjust(450); } };
+  window.addEventListener("pointerup", releaseAdjust);
+  window.addEventListener("pointercancel", releaseAdjust);
+  radiusSlider.oninput = (e) => {
     settings.radiusMi = Number(e.target.value); saveSettings(); syncSettingsUI();
     drawYou(); renderList();
+    startAdjust();
+    if (!radiusPointerDown) endAdjust(1300); // keyboard arrows: linger, then restore
   };
   $("set-minmag").oninput = (e) => { settings.minMag = Number(e.target.value); saveSettings(); syncSettingsUI(); };
   $("set-units").onchange = (e) => { settings.units = e.target.value; saveSettings(); syncSettingsUI(); renderList(); };
+  $("set-basemap").onchange = (e) => { settings.basemap = e.target.value; saveSettings(); applyBasemap(); };
   $("set-sound").onchange = (e) => {
     settings.sound = e.target.checked; saveSettings();
     if (settings.sound) { // unlock audio on user gesture
