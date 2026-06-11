@@ -425,16 +425,17 @@ function animateRipples() {
   const now = Date.now();
   const mpp = metersPerPixel();
   const b = map.getBounds();
+  const cLng = map.getCenter().lng;
   rippleStats.active = 0; rippleStats.culled = 0; rippleStats.waveFronts = 0;
 
   for (const ev of events.values()) {
     const frKm = feltRadiusKm(ev.mag);
-    if (frKm <= 0) continue; // mag < 1.5 or null: never ripples
+    if (frKm <= 0) { removeRipple(ev); continue; } // mag dropped below ripple threshold
 
     // cull: ripple's largest extent can't touch the view, or is sub-pixel
-    const lon = viewLon(ev.lon);
+    const lon = ev.lon + 360 * Math.round((cLng - ev.lon) / 360);
     const latPad = frKm / 111; // km → degrees latitude
-    const lonPad = latPad / Math.max(0.2, Math.cos(ev.lat * Math.PI / 180));
+    const lonPad = latPad / Math.max(0.05, Math.cos(ev.lat * Math.PI / 180));
     const inView = ev.lat > b.getSouth() - latPad && ev.lat < b.getNorth() + latPad &&
                    lon > b.getWest() - lonPad && lon < b.getEast() + lonPad;
     if (!inView || (frKm * 1000) / mpp < RIPPLE_MIN_PX) {
@@ -445,7 +446,7 @@ function animateRipples() {
     rippleStats.active++;
 
     // looping ripple: radius 0 → felt radius, fading out as it grows
-    const phase = ((now / RIPPLE_PERIOD_MS) + ripplePhase(ev.id)) % 1;
+    const phase = ((now / RIPPLE_PERIOD_MS) + (ev.phaseOff ??= ripplePhase(ev.id))) % 1;
     if (!ev.ripple) ev.ripple = makeRippleCircle(ev, 1.5).addTo(map);
     ev.ripple.setRadius(Math.max(1, phase * frKm * 1000));
     ev.ripple.setStyle({ opacity: 0.7 * (1 - phase) });
@@ -453,9 +454,11 @@ function animateRipples() {
     // real-time wave front while the S-wave is still inside the felt radius
     const waveKm = ((now - ev.time) / 1000) * S_WAVE_KMS;
     if (waveKm > 0 && waveKm < frKm) {
-      if (!ev.waveFront) ev.waveFront = makeRippleCircle(ev, 2.5, "q-wavefront").addTo(map);
+      if (!ev.waveFront) {
+        ev.waveFront = makeRippleCircle(ev, 2.5, "q-wavefront").addTo(map);
+        ev.waveFront.setStyle({ opacity: 0.8 });
+      }
       ev.waveFront.setRadius(waveKm * 1000);
-      ev.waveFront.setStyle({ opacity: 0.8 });
       rippleStats.waveFronts++;
     } else if (ev.waveFront) {
       map.removeLayer(ev.waveFront);
