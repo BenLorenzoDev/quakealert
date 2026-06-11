@@ -99,6 +99,17 @@ function initMap() {
   map = L.map("map", { zoomControl: false, worldCopyJump: true, attributionControl: true })
     .setView([20, 0], 2);
   L.control.zoom({ position: "bottomright" }).addTo(map);
+
+  // never allow zooming out past "one world fills the screen" — markers exist on
+  // only one world copy, so repeated worlds would show earthquakes just once
+  const applyMinZoom = () => {
+    const z = Math.max(2, Math.ceil(Math.log2(map.getSize().x / 256)));
+    map.setMinZoom(z);
+    if (map.getZoom() < z) map.setZoom(z);
+  };
+  applyMinZoom();
+  map.on("resize", applyMinZoom);
+  map.setMaxBounds([[-85, -540], [85, 540]]); // keep panning within the map, no gray void
   L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
     subdomains: "abcd", maxZoom: 19,
