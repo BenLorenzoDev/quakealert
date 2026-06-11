@@ -86,14 +86,10 @@ html, body {
   border: 1.5px solid rgba(255,255,255,.85);
   box-shadow: 0 0 8px rgba(0,0,0,.6);
 }
-.q-marker .pulse {
-  position: absolute; inset: 0; border-radius: 50%;
-  animation: pulse 2s ease-out infinite;
-  pointer-events: none;
-}
-@keyframes pulse {
-  0%   { transform: scale(1);   opacity: .85; }
-  100% { transform: scale(3.2); opacity: 0; }
+/* real-time wave front — white glow marks it as "happening now", distinct
+   from the looping decorative ripple */
+.q-wavefront {
+  filter: drop-shadow(0 0 3px rgba(255, 255, 255, .8));
 }
 .you-marker .ring {
   width: 16px; height: 16px; border-radius: 50%;
