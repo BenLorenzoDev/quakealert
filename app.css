@@ -78,8 +78,9 @@ html, body {
 .leaflet-control-attribution a { color: var(--muted) !important; }
 .leaflet-bar a { background: var(--panel) !important; color: var(--text) !important; border-color: var(--border) !important; }
 
-/* Quake markers */
-.q-marker { position: relative; }
+/* Quake markers — must stay position:absolute (Leaflet positions them via
+   transform from the pane origin; relative would leave them in document flow) */
+.q-marker { position: absolute; }
 .q-marker .core {
   position: absolute; inset: 0; border-radius: 50%;
   border: 1.5px solid rgba(255,255,255,.85);

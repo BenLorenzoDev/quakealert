@@ -94,9 +94,37 @@ function distToUserKm(ev) {
   return u ? haversineKm(u.lat, u.lon, ev.lat, ev.lon) : null;
 }
 
+// longitude of the world copy closest to the current view center — tiles wrap
+// endlessly, so every overlay must follow the copy the user is looking at
+function viewLon(lon) {
+  const c = map ? map.getCenter().lng : 0;
+  return lon + 360 * Math.round((c - lon) / 360);
+}
+
+function rewrapOverlays() {
+  for (const ev of events.values()) {
+    if (!ev.marker) continue;
+    const lon = viewLon(ev.lon);
+    if (ev.marker.getLatLng().lng !== lon) {
+      ev.marker.setLatLng([ev.lat, lon]);
+      if (ev.feltCircle) ev.feltCircle.setLatLng([ev.lat, lon]);
+    }
+  }
+  if (selectedFeltCircle && selectedFeltCircle._qaEv) {
+    const e = selectedFeltCircle._qaEv;
+    selectedFeltCircle.setLatLng([e.lat, viewLon(e.lon)]);
+  }
+  const u = userLoc();
+  if (u && youMarker) {
+    const lon = viewLon(u.lon);
+    youMarker.setLatLng([u.lat, lon]);
+    if (youCircle) youCircle.setLatLng([u.lat, lon]);
+  }
+}
+
 /* ============================== Map ============================== */
 function initMap() {
-  map = L.map("map", { zoomControl: false, worldCopyJump: true, attributionControl: true })
+  map = L.map("map", { zoomControl: false, worldCopyJump: false, attributionControl: true })
     .setView([20, 0], 2);
   L.control.zoom({ position: "bottomright" }).addTo(map);
 
@@ -109,7 +137,10 @@ function initMap() {
   };
   applyMinZoom();
   map.on("resize", applyMinZoom);
-  map.setMaxBounds([[-85, -540], [85, 540]]); // keep panning within the map, no gray void
+  // clamp vertical panning only — horizontal stays free so the world can wrap;
+  // overlays are re-anchored to the visible world copy on every move (rewrapOverlays)
+  map.setMaxBounds([[-85, -1e7], [85, 1e7]]);
+  map.on("moveend", rewrapOverlays);
   L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
     subdomains: "abcd", maxZoom: 19,
@@ -152,13 +183,14 @@ function toast(msg) {
 function drawYou() {
   const u = userLoc();
   if (!u) return;
+  const lon = viewLon(u.lon);
   const icon = L.divIcon({ className: "you-marker", html: '<div class="ring"></div>', iconSize: [16, 16], iconAnchor: [8, 8] });
-  if (youMarker) youMarker.setLatLng([u.lat, u.lon]);
-  else youMarker = L.marker([u.lat, u.lon], { icon, zIndexOffset: 1000, title: "You" }).addTo(map);
+  if (youMarker) youMarker.setLatLng([u.lat, lon]);
+  else youMarker = L.marker([u.lat, lon], { icon, zIndexOffset: 1000, title: "You" }).addTo(map);
 
   const radiusM = settings.radiusMi * KM_PER_MI * 1000;
-  if (youCircle) { youCircle.setLatLng([u.lat, u.lon]); youCircle.setRadius(radiusM); }
-  else youCircle = L.circle([u.lat, u.lon], {
+  if (youCircle) { youCircle.setLatLng([u.lat, lon]); youCircle.setRadius(radiusM); }
+  else youCircle = L.circle([u.lat, lon], {
     radius: radiusM, color: "#2f80ed", weight: 1, opacity: .5,
     fillColor: "#2f80ed", fillOpacity: .05, interactive: false,
   }).addTo(map);
@@ -251,7 +283,7 @@ function markerSize(ev) { return Math.max(10, 8 + (ev.mag || 0) * 3); }
 function addMarker(ev) {
   const s = markerSize(ev);
   const icon = L.divIcon({ className: "q-marker", html: markerHtml(ev), iconSize: [s, s], iconAnchor: [s / 2, s / 2] });
-  ev.marker = L.marker([ev.lat, ev.lon], { icon, zIndexOffset: Math.round((ev.mag || 0) * 10) }).addTo(map);
+  ev.marker = L.marker([ev.lat, viewLon(ev.lon)], { icon, zIndexOffset: Math.round((ev.mag || 0) * 10) }).addTo(map);
   ev.marker.on("click", () => selectEvent(ev.id, { pan: false }));
 
   // significant + recent quakes get a persistent felt-radius circle
@@ -264,17 +296,19 @@ function addMarker(ev) {
 function updateMarker(ev) {
   if (!ev.marker) return;
   const s = markerSize(ev);
-  ev.marker.setLatLng([ev.lat, ev.lon]);
+  ev.marker.setLatLng([ev.lat, viewLon(ev.lon)]);
   ev.marker.setIcon(L.divIcon({ className: "q-marker", html: markerHtml(ev), iconSize: [s, s], iconAnchor: [s / 2, s / 2] }));
   renderList();
 }
 
 function makeFeltCircle(ev, opacity) {
-  return L.circle([ev.lat, ev.lon], {
+  const c = L.circle([ev.lat, viewLon(ev.lon)], {
     radius: feltRadiusKm(ev.mag) * 1000,
     color: magColor(ev.mag), weight: 1.5, opacity,
     fillColor: magColor(ev.mag), fillOpacity: 0.08, interactive: false,
   });
+  c._qaEv = ev;
+  return c;
 }
 
 function refreshAllDistances() { renderList(); }
@@ -287,7 +321,7 @@ function selectEvent(id, { pan = true } = {}) {
   if (!ev.feltCircle && feltRadiusKm(ev.mag) > 0) {
     selectedFeltCircle = makeFeltCircle(ev, 0.6).addTo(map);
   }
-  if (pan) map.setView([ev.lat, ev.lon], Math.max(map.getZoom(), 5));
+  if (pan) map.setView([ev.lat, viewLon(ev.lon)], Math.max(map.getZoom(), 5));
 
   const dKm = distToUserKm(ev);
   const fr = feltRadiusKm(ev.mag);
@@ -564,7 +598,7 @@ function wireAlertUI() {
     const ev = activeAlert;
     dismissAlert();
     selectEvent(ev.id);
-    map.setView([ev.lat, ev.lon], 6);
+    map.setView([ev.lat, viewLon(ev.lon)], 6);
   };
 }
 
@@ -648,6 +682,8 @@ window.__qa = {
     return ev.id;
   },
   setUserLocation: (lat, lon) => setUserLocation(lat, lon, "manual"),
+  get map() { return map; },
+  get events() { return events; },
   getState: () => ({
     events: events.size, wsOk, pollOk,
     user: userLoc(), settings: { ...settings },
