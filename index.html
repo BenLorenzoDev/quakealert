@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0f14">
+  <meta name="description" content="Live earthquake map with proximity alerts and impact countdown">
+  <title>QuakeAlert — Live Earthquake Map &amp; Alerts</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="stylesheet" href="vendor/leaflet.css">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Top bar -->
+    <header id="topbar">
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <path d="M2 13h3l2-7 3 14 3-11 2 6 2-3 1 1h4" fill="none" stroke="#ff5a3c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="brand-name">QuakeAlert</span>
+      </div>
+      <div class="topbar-right">
+        <div id="conn-status" class="conn-status" title="Data feed status">
+          <span class="dot" id="conn-dot"></span><span id="conn-label">connecting…</span>
+        </div>
+        <button id="btn-install" class="icon-btn install-btn hidden" title="Install app">Install</button>
+        <button id="btn-locate" class="icon-btn" title="Go to my location" aria-label="My location">
+          <svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="3" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        </button>
+        <button id="btn-settings" class="icon-btn" title="Alert settings" aria-label="Settings">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7zm7.43-2.53c.04-.32.07-.64.07-.97s-.03-.66-.07-.97l2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1a7.3 7.3 0 0 0-1.69-.98l-.38-2.65A.5.5 0 0 0 14 2h-4a.5.5 0 0 0-.5.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1a.5.5 0 0 0-.61.22l-2 3.46a.5.5 0 0 0 .12.64l2.11 1.65c-.04.31-.07.64-.07.97s.03.65.07.97l-2.11 1.65a.5.5 0 0 0-.12.64l2 3.46c.14.24.42.34.61.22l2.49-1c.52.39 1.08.73 1.69.98l.38 2.65A.5.5 0 0 0 10 22h4a.5.5 0 0 0 .5-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.5 0 .61-.22l2-3.46a.5.5 0 0 0-.12-.64l-2.12-1.66z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Location banner -->
+    <div id="loc-banner" class="loc-banner hidden">
+      <span id="loc-banner-text">Location unavailable — tap the map to set your position.</span>
+      <button id="loc-banner-close" aria-label="Dismiss">&times;</button>
+    </div>
+
+    <!-- Map -->
+    <div id="map"></div>
+
+    <!-- Quake list bottom sheet -->
+    <div id="sheet" class="sheet collapsed">
+      <button id="sheet-handle" class="sheet-handle" aria-label="Toggle earthquake list"><span></span></button>
+      <div class="sheet-header">
+        <h2>Recent earthquakes</h2>
+        <span id="quake-count" class="quake-count">0</span>
+      </div>
+      <ul id="quake-list" class="quake-list"></ul>
+    </div>
+
+    <!-- Settings modal -->
+    <div id="settings-modal" class="modal hidden" role="dialog" aria-label="Alert settings">
+      <div class="modal-card">
+        <div class="modal-head">
+          <h2>Alert settings</h2>
+          <button class="icon-btn modal-close" data-close="settings-modal" aria-label="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="field">
+            <label for="set-radius">Alert distance: <strong id="radius-val"></strong></label>
+            <input type="range" id="set-radius" min="50" max="3000" step="50">
+            <div class="hint">Notify me when an earthquake happens within this distance of my location.</div>
+          </div>
+          <div class="field">
+            <label for="set-minmag">Minimum magnitude: <strong id="minmag-val"></strong></label>
+            <input type="range" id="set-minmag" min="1" max="7" step="0.5">
+            <div class="hint">Ignore earthquakes weaker than this.</div>
+          </div>
+          <div class="field row">
+            <label for="set-units">Distance units</label>
+            <select id="set-units">
+              <option value="mi">miles</option>
+              <option value="km">kilometers</option>
+            </select>
+          </div>
+          <div class="field row">
+            <label for="set-notify">Phone notifications</label>
+            <label class="switch"><input type="checkbox" id="set-notify"><span class="slider"></span></label>
+          </div>
+          <div class="field row">
+            <label for="set-sound">Alarm sound</label>
+            <label class="switch"><input type="checkbox" id="set-sound"><span class="slider"></span></label>
+          </div>
+          <div class="field">
+            <button id="btn-pick-loc" class="btn secondary full">📍 Set my location on the map</button>
+            <div class="hint">Use this if GPS is unavailable or you want alerts for a different place.</div>
+          </div>
+          <div class="field">
+            <button id="btn-test-alert" class="btn secondary full">🔔 Trigger test alert</button>
+            <div class="hint">Simulates a nearby earthquake so you can see exactly what an alert looks like.</div>
+          </div>
+          <div class="about">
+            Data: <a href="https://earthquake.usgs.gov" target="_blank" rel="noopener">USGS</a> &amp; <a href="https://www.seismicportal.eu" target="_blank" rel="noopener">EMSC</a> (live).
+            Countdown estimates S-wave arrival (~3.5 km/s). This app is informational and not a substitute for official warning systems.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quake detail panel -->
+    <div id="detail" class="detail hidden">
+      <button class="icon-btn detail-close" id="detail-close" aria-label="Close">&times;</button>
+      <div id="detail-body"></div>
+    </div>
+
+    <!-- ALERT overlay -->
+    <div id="alert-overlay" class="alert-overlay hidden" role="alertdialog">
+      <div class="alert-card">
+        <div class="alert-title-row">
+          <span class="alert-badge">⚠ EARTHQUAKE ALERT</span>
+          <button id="alert-close" class="icon-btn" aria-label="Dismiss alert">&times;</button>
+        </div>
+        <div id="alert-mag" class="alert-mag"></div>
+        <div id="alert-place" class="alert-place"></div>
+        <div id="alert-dist" class="alert-dist"></div>
+        <div class="countdown-wrap">
+          <div class="countdown-label" id="countdown-label">Estimated shaking arrives in</div>
+          <div id="countdown" class="countdown">--:--</div>
+          <div id="countdown-sub" class="countdown-sub"></div>
+        </div>
+        <div class="alert-actions">
+          <button id="alert-view-map" class="btn primary">View on map</button>
+          <button id="alert-dismiss" class="btn secondary">Dismiss</button>
+        </div>
+        <div class="alert-tip">Drop, cover, hold on. Move away from windows and heavy objects.</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="vendor/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
