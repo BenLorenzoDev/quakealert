@@ -166,6 +166,8 @@ function rewrapOverlays() {
     if (ev.marker.getLatLng().lng !== lon) {
       ev.marker.setLatLng([ev.lat, lon]);
       if (ev.feltCircle) ev.feltCircle.setLatLng([ev.lat, lon]);
+      if (ev.ripple) ev.ripple.setLatLng([ev.lat, lon]);
+      if (ev.waveFront) ev.waveFront.setLatLng([ev.lat, lon]);
     }
   }
   if (selectedFeltCircle && selectedFeltCircle._qaEv) {
@@ -335,6 +337,7 @@ function pruneEvents() {
     if (e.time < cutoff || sorted.indexOf(e) >= MAX_EVENTS) {
       if (e.marker) map.removeLayer(e.marker);
       if (e.feltCircle) map.removeLayer(e.feltCircle);
+      removeRipple(e);
       events.delete(e.id);
     }
   }
@@ -367,6 +370,7 @@ function updateMarker(ev) {
   const s = markerSize(ev);
   ev.marker.setLatLng([ev.lat, viewLon(ev.lon)]);
   ev.marker.setIcon(L.divIcon({ className: "q-marker", html: markerHtml(ev), iconSize: [s, s], iconAnchor: [s / 2, s / 2] }));
+  removeRipple(ev); // mag/color may have changed; next frame recreates correctly
   renderList();
 }
 
