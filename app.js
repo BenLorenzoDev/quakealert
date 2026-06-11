@@ -382,6 +382,101 @@ function makeFeltCircle(ev, opacity) {
 
 function refreshAllDistances() { renderList(); }
 
+/* ============================== Ripples ============================== */
+// Every quake with a non-zero felt radius emits a looping geographic ripple
+// (0 → felt radius over RIPPLE_PERIOD_MS). Quakes whose S-wave is physically
+// still inside the felt radius also show a real-time wave-front ring.
+// One shared rAF loop drives everything; off-screen / sub-pixel ripples are
+// culled each frame, which is what keeps MAX_EVENTS quakes affordable.
+const RIPPLE_PERIOD_MS = 3000;
+const RIPPLE_MIN_PX = 8;      // cull ripples smaller than this on screen
+
+let rippleFrame = null;
+const rippleStats = { active: 0, culled: 0, waveFronts: 0 };
+const reduceMotionMq = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+// stable 0..1 phase offset per event so 600 ripples don't pulse in unison
+function ripplePhase(id) {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return (h % 1000) / 1000;
+}
+
+// approximate, at view-center latitude — good enough for culling decisions
+function metersPerPixel() {
+  return 40075016.686 * Math.abs(Math.cos(map.getCenter().lat * Math.PI / 180))
+    / Math.pow(2, map.getZoom() + 8);
+}
+
+function makeRippleCircle(ev, weight, className) {
+  return L.circle([ev.lat, viewLon(ev.lon)], {
+    radius: 1, color: magColor(ev.mag), weight, opacity: 0,
+    fill: false, interactive: false, className,
+  });
+}
+
+function removeRipple(ev) {
+  if (ev.ripple) { map.removeLayer(ev.ripple); ev.ripple = null; }
+  if (ev.waveFront) { map.removeLayer(ev.waveFront); ev.waveFront = null; }
+}
+
+function animateRipples() {
+  rippleFrame = requestAnimationFrame(animateRipples);
+  const now = Date.now();
+  const mpp = metersPerPixel();
+  const b = map.getBounds();
+  rippleStats.active = 0; rippleStats.culled = 0; rippleStats.waveFronts = 0;
+
+  for (const ev of events.values()) {
+    const frKm = feltRadiusKm(ev.mag);
+    if (frKm <= 0) continue; // mag < 1.5 or null: never ripples
+
+    // cull: ripple's largest extent can't touch the view, or is sub-pixel
+    const lon = viewLon(ev.lon);
+    const latPad = frKm / 111; // km → degrees latitude
+    const lonPad = latPad / Math.max(0.2, Math.cos(ev.lat * Math.PI / 180));
+    const inView = ev.lat > b.getSouth() - latPad && ev.lat < b.getNorth() + latPad &&
+                   lon > b.getWest() - lonPad && lon < b.getEast() + lonPad;
+    if (!inView || (frKm * 1000) / mpp < RIPPLE_MIN_PX) {
+      rippleStats.culled++;
+      removeRipple(ev);
+      continue;
+    }
+    rippleStats.active++;
+
+    // looping ripple: radius 0 → felt radius, fading out as it grows
+    const phase = ((now / RIPPLE_PERIOD_MS) + ripplePhase(ev.id)) % 1;
+    if (!ev.ripple) ev.ripple = makeRippleCircle(ev, 1.5).addTo(map);
+    ev.ripple.setRadius(Math.max(1, phase * frKm * 1000));
+    ev.ripple.setStyle({ opacity: 0.7 * (1 - phase) });
+
+    // real-time wave front while the S-wave is still inside the felt radius
+    const waveKm = ((now - ev.time) / 1000) * S_WAVE_KMS;
+    if (waveKm > 0 && waveKm < frKm) {
+      if (!ev.waveFront) ev.waveFront = makeRippleCircle(ev, 2.5, "q-wavefront").addTo(map);
+      ev.waveFront.setRadius(waveKm * 1000);
+      ev.waveFront.setStyle({ opacity: 0.8 });
+      rippleStats.waveFronts++;
+    } else if (ev.waveFront) {
+      map.removeLayer(ev.waveFront);
+      ev.waveFront = null;
+    }
+  }
+}
+
+function startRipples() {
+  if (rippleFrame || reduceMotionMq.matches) return;
+  rippleFrame = requestAnimationFrame(animateRipples);
+}
+
+function stopRipples() {
+  if (rippleFrame) { cancelAnimationFrame(rippleFrame); rippleFrame = null; }
+  for (const ev of events.values()) removeRipple(ev);
+}
+
+reduceMotionMq.addEventListener?.("change", () =>
+  reduceMotionMq.matches ? stopRipples() : startRipples());
+
 /* ============================== Detail panel ============================== */
 function selectEvent(id, { pan = true } = {}) {
   const ev = events.get(id);
@@ -857,6 +952,7 @@ window.__qa = {
     activeAlert: activeAlert?.id || null,
   }),
   dismissAlert,
+  rippleStats: () => ({ ...rippleStats }),
 };
 
 /* ============================== Boot ============================== */
@@ -877,5 +973,6 @@ pollUSGS();
 setInterval(pollUSGS, POLL_MS);
 connectEMSC();
 refreshLoop();
+startRipples();
 
 })();
