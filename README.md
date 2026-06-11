@@ -6,7 +6,7 @@ A free, installable web app (PWA) that shows **live earthquakes on a world map**
 
 - **Live earthquake map** — dark world map with every earthquake from the last 24 hours. Markers are sized and colored by magnitude, recent quakes pulse, and significant ones show their estimated *felt radius* as a glowing circle.
 - **Two real-time data sources** — EMSC SeismicPortal WebSocket (instant push, worldwide) + USGS feed (refreshed every minute). Duplicates are merged automatically. The badge in the top bar shows `LIVE` when the push feed is connected.
-- **Proximity alerts** — set your alert distance (50–3000 mi) and minimum magnitude in Settings. When a new quake matches, you get a full-screen alarm, siren, vibration, and a phone notification.
+- **Proximity alerts** — set your alert distance (from 50 mi up to the entire Earth) and minimum magnitude in Settings. When a new quake matches, you get a full-screen alarm, siren, vibration, and a phone notification.
 - **Impact countdown** — the alert shows when the strong shaking (S-wave, ~3.5 km/s) will reach your location, plus the first jolt (P-wave). If the quake is too far to feel, the app tells you so — the countdown simply reaches zero without impact.
 - **Felt-radius estimate** — every quake's detail card tells you whether you're inside or outside the area where shaking is likely felt.
 - **Works offline** — the app shell and visited map tiles are cached; live data resumes when you're back online.

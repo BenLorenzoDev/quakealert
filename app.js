@@ -11,35 +11,51 @@ const P_WAVE_KMS = 6.1;            // primary wave speed — first (weaker) jolt
 const ALERT_FRESH_MS = 30 * 60_000; // only alert for quakes younger than 30 min
 const MAX_EVENTS = 600;
 const KM_PER_MI = 1.609344;
+const RADIUS_MIN_MI = 50;
+const RADIUS_MAX_MI = 12500;   // ≥ farthest possible distance on Earth (~12,451 mi) — covers the whole planet
+const EARTH_HALF_KM = 20037;   // half of Earth's circumference; no two points are farther apart
 
 const OSM_CARTO_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>';
 const BASEMAPS = {
   dark: {
+    label: "Dark",
     url: "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
     options: { attribution: OSM_CARTO_ATTR, subdomains: "abcd", maxZoom: 19 },
     bg: "#0a0d12",
   },
   light: {
+    label: "Light",
     url: "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
     options: { attribution: OSM_CARTO_ATTR, subdomains: "abcd", maxZoom: 19 },
     bg: "#e8e8e6",
   },
   streets: {
+    label: "Streets",
     url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
     options: { attribution: OSM_CARTO_ATTR, subdomains: "abcd", maxZoom: 19 },
     bg: "#cfe3f5",
   },
   satellite: {
+    label: "Satellite",
     url: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
     options: { attribution: "&copy; <a href=\"https://www.esri.com\">Esri</a> &mdash; Maxar, Earthstar Geographics", maxZoom: 19 },
     bg: "#0a0d12",
   },
   terrain: {
+    label: "Terrain",
     url: "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
     options: { attribution: OSM_CARTO_ATTR + ' &copy; <a href="https://opentopomap.org">OpenTopoMap</a>', subdomains: "abc", maxZoom: 17 },
     bg: "#dfe9dc",
   },
 };
+
+// preview thumbnail for the style picker — the SF Bay tile (z6 x10 y24) shows
+// coastline, city, and relief, so every style's character is recognizable
+function sampleTileUrl(bm) {
+  return bm.url
+    .replace("{s}", (bm.options.subdomains || "a")[0]).replace("{r}", "")
+    .replace("{z}", "6").replace("{x}", "10").replace("{y}", "24");
+}
 
 const DEFAULTS = {
   radiusMi: 1000,
@@ -114,6 +130,18 @@ function fmtAgo(t) {
   if (s < 86400) return (s / 3600).toFixed(1) + "h ago";
   return (s / 86400).toFixed(1) + "d ago";
 }
+
+// the distance slider is exponential: fine control at city scale on the left,
+// sweeping out to the entire planet at the right end
+function radiusToSlider(mi) {
+  return 100 * Math.log(mi / RADIUS_MIN_MI) / Math.log(RADIUS_MAX_MI / RADIUS_MIN_MI);
+}
+function sliderToRadius(t) {
+  const mi = RADIUS_MIN_MI * Math.pow(RADIUS_MAX_MI / RADIUS_MIN_MI, t / 100);
+  const step = mi < 500 ? 25 : mi < 2000 ? 50 : mi < 5000 ? 100 : 250;
+  return Math.min(RADIUS_MAX_MI, Math.round(mi / step) * step);
+}
+function isWholeEarth(mi) { return mi * KM_PER_MI >= EARTH_HALF_KM; }
 
 function userLoc() {
   return (settings.userLat != null) ? { lat: settings.userLat, lon: settings.userLon } : null;
@@ -227,7 +255,9 @@ function drawYou() {
   if (youMarker) youMarker.setLatLng([u.lat, lon]);
   else youMarker = L.marker([u.lat, lon], { icon, zIndexOffset: 1000, title: "You" }).addTo(map);
 
-  const radiusM = settings.radiusMi * KM_PER_MI * 1000;
+  // cap the drawn circle at half Earth's circumference — beyond that the whole
+  // planet is covered and Mercator can't draw a meaningful circle anyway
+  const radiusM = Math.min(settings.radiusMi * KM_PER_MI, EARTH_HALF_KM) * 1000;
   if (youCircle) { youCircle.setLatLng([u.lat, lon]); youCircle.setRadius(radiusM); }
   else youCircle = L.circle([u.lat, lon], {
     radius: radiusM, color: "#2f80ed", weight: 1, opacity: .5,
@@ -573,16 +603,49 @@ function playSiren() {
 }
 
 /* ============================== Settings UI ============================== */
+function updateRadiusLabel() {
+  $("radius-val").textContent = isWholeEarth(settings.radiusMi)
+    ? "🌍 Entire Earth"
+    : settings.units === "mi"
+      ? `${settings.radiusMi.toLocaleString()} mi`
+      : `${Math.round(settings.radiusMi * KM_PER_MI).toLocaleString()} km`;
+}
+
 function syncSettingsUI() {
-  $("set-radius").value = settings.radiusMi;
-  $("radius-val").textContent = settings.units === "mi"
-    ? `${settings.radiusMi} mi` : `${Math.round(settings.radiusMi * KM_PER_MI)} km`;
+  $("set-radius").value = radiusToSlider(settings.radiusMi);
+  updateRadiusLabel();
   $("set-minmag").value = settings.minMag;
   $("minmag-val").textContent = "M " + Number(settings.minMag).toFixed(1);
   $("set-units").value = settings.units;
-  $("set-basemap").value = BASEMAPS[settings.basemap] ? settings.basemap : "dark";
+  const curBasemap = BASEMAPS[settings.basemap] ? settings.basemap : "dark";
+  document.querySelectorAll("#set-basemap .basemap-opt").forEach((b) => {
+    b.classList.toggle("selected", b.dataset.key === curBasemap);
+    b.setAttribute("aria-checked", String(b.dataset.key === curBasemap));
+  });
   $("set-notify").checked = settings.notify && Notification?.permission === "granted";
   $("set-sound").checked = settings.sound;
+}
+
+function buildBasemapPicker() {
+  const wrap = $("set-basemap");
+  wrap.replaceChildren();
+  for (const [key, bm] of Object.entries(BASEMAPS)) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "basemap-opt";
+    b.dataset.key = key;
+    b.setAttribute("role", "radio");
+    const thumb = document.createElement("span");
+    thumb.className = "basemap-thumb";
+    thumb.style.backgroundColor = bm.bg;
+    thumb.style.backgroundImage = `url('${sampleTileUrl(bm)}')`;
+    const name = document.createElement("span");
+    name.className = "basemap-name";
+    name.textContent = bm.label;
+    b.append(thumb, name);
+    b.onclick = () => { settings.basemap = key; saveSettings(); applyBasemap(); syncSettingsUI(); };
+    wrap.appendChild(b);
+  }
 }
 
 function wireSettings() {
@@ -595,7 +658,13 @@ function wireSettings() {
   const radiusSlider = $("set-radius");
   let adjustEndTimer = null, radiusPointerDown = false;
   const fitToRadius = () => {
-    if (youCircle) map.fitBounds(youCircle.getBounds(), { animate: false, padding: [48, 48] });
+    if (!youCircle) return;
+    if (isWholeEarth(settings.radiusMi)) {
+      const u = userLoc();
+      map.setView([u ? u.lat : 20, u ? viewLon(u.lon) : 0], map.getMinZoom(), { animate: false });
+    } else {
+      map.fitBounds(youCircle.getBounds(), { animate: false, padding: [48, 48] });
+    }
   };
   const startAdjust = () => {
     clearTimeout(adjustEndTimer);
@@ -619,14 +688,15 @@ function wireSettings() {
   window.addEventListener("pointerup", releaseAdjust);
   window.addEventListener("pointercancel", releaseAdjust);
   radiusSlider.oninput = (e) => {
-    settings.radiusMi = Number(e.target.value); saveSettings(); syncSettingsUI();
+    settings.radiusMi = sliderToRadius(Number(e.target.value)); saveSettings();
+    updateRadiusLabel(); // not syncSettingsUI — re-snapping the slider mid-drag would fight the pointer
     drawYou(); renderList();
     startAdjust();
     if (!radiusPointerDown) endAdjust(1300); // keyboard arrows: linger, then restore
   };
   $("set-minmag").oninput = (e) => { settings.minMag = Number(e.target.value); saveSettings(); syncSettingsUI(); };
   $("set-units").onchange = (e) => { settings.units = e.target.value; saveSettings(); syncSettingsUI(); renderList(); };
-  $("set-basemap").onchange = (e) => { settings.basemap = e.target.value; saveSettings(); applyBasemap(); };
+  buildBasemapPicker();
   $("set-sound").onchange = (e) => {
     settings.sound = e.target.checked; saveSettings();
     if (settings.sound) { // unlock audio on user gesture
