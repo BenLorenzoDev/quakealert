@@ -1,5 +1,5 @@
 /* QuakeAlert service worker — app shell cache + notification click handling */
-const CACHE = "quakealert-v2";
+const CACHE = "quakealert-v3";
 const SHELL = [
   "./",
   "./index.html",
@@ -42,10 +42,12 @@ self.addEventListener("fetch", (e) => {
     );
     return;
   }
-  // app shell: network first so updates always reach users; cache fallback offline
+  // app shell: network first so updates always reach users; cache fallback offline.
+  // "no-cache" forces revalidation with the server (fast 304s) — otherwise the
+  // browser HTTP cache can serve a stale shell for up to its max-age window
   if (e.request.method === "GET" && url.origin === location.origin) {
     e.respondWith(
-      fetch(e.request)
+      fetch(e.request.url, { cache: "no-cache" })
         .then((res) => {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put(e.request, copy));
