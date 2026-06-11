@@ -154,8 +154,7 @@ function distToUserKm(ev) {
 
 // longitude of the world copy closest to the current view center — tiles wrap
 // endlessly, so every overlay must follow the copy the user is looking at
-function viewLon(lon) {
-  const c = map ? map.getCenter().lng : 0;
+function viewLon(lon, c = map ? map.getCenter().lng : 0) {
   return lon + 360 * Math.round((c - lon) / 360);
 }
 
@@ -345,10 +344,7 @@ function pruneEvents() {
 
 /* ============================== Markers ============================== */
 function markerHtml(ev) {
-  const c = magColor(ev.mag);
-  const recent = Date.now() - ev.time < 3600_000;
-  return `<div class="core" style="background:${c}"></div>` +
-         (recent ? `<div class="pulse" style="background:${c}"></div>` : "");
+  return `<div class="core" style="background:${magColor(ev.mag)}"></div>`;
 }
 function markerSize(ev) { return Math.max(10, 8 + (ev.mag || 0) * 3); }
 
@@ -437,7 +433,7 @@ function animateRipples() {
     if (frKm <= 0) { removeRipple(ev); continue; } // mag dropped below ripple threshold
 
     // cull: ripple's largest extent can't touch the view, or is sub-pixel
-    const lon = ev.lon + 360 * Math.round((cLng - ev.lon) / 360);
+    const lon = viewLon(ev.lon, cLng);
     const latPad = frKm / 111; // km → degrees latitude
     const lonPad = latPad / Math.max(0.05, Math.cos(ev.lat * Math.PI / 180));
     const inView = ev.lat > b.getSouth() - latPad && ev.lat < b.getNorth() + latPad &&
@@ -964,7 +960,7 @@ window.__qa = {
 
 /* ============================== Boot ============================== */
 function refreshLoop() {
-  // keep "x ago" labels and pulse states fresh
+  // keep "x ago" labels fresh
   setInterval(() => { renderList(); }, 30_000);
 }
 
