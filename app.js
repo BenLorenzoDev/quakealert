@@ -63,6 +63,7 @@ const DEFAULTS = {
   units: "mi",
   notify: false,
   sound: true,
+  theme: "dark",         // "dark" | "light" — app chrome theme
   basemap: "dark",
   userLat: null,
   userLon: null,
@@ -223,6 +224,27 @@ function applyBasemap() {
     map.setMaxZoom(bm.options.maxZoom);
     if (map.getZoom() > bm.options.maxZoom) map.setZoom(bm.options.maxZoom);
   }
+}
+
+/* Apply the chrome theme (dark/light) by flipping the <html> data attribute,
+   which swaps the CSS variables, and keep the browser UI color in sync. */
+function applyTheme() {
+  const theme = settings.theme === "light" ? "light" : "dark";
+  document.documentElement.dataset.theme = theme;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", theme === "light" ? "#ffffff" : "#0b0f14");
+  const btn = $("btn-theme");
+  if (btn) {
+    const label = theme === "light" ? "Switch to dark theme" : "Switch to light theme";
+    btn.title = label;
+    btn.setAttribute("aria-label", label);
+  }
+}
+
+function toggleTheme() {
+  settings.theme = settings.theme === "light" ? "dark" : "light";
+  saveSettings();
+  applyTheme();
 }
 
 function setUserLocation(lat, lon, source) {
@@ -891,6 +913,7 @@ function wireUI() {
     requestGeolocation(true);
   };
   $("loc-banner-close").onclick = hideLocBanner;
+  $("btn-theme").onclick = toggleTheme;
 
   // open alert from notification click (sw posts hash)
   window.addEventListener("hashchange", openFromHash);
@@ -947,6 +970,8 @@ window.__qa = {
     return ev.id;
   },
   setUserLocation: (lat, lon) => setUserLocation(lat, lon, "manual"),
+  setTheme: (theme) => { settings.theme = theme === "light" ? "light" : "dark"; saveSettings(); applyTheme(); },
+  toggleTheme,
   get map() { return map; },
   get events() { return events; },
   getState: () => ({
@@ -964,6 +989,7 @@ function refreshLoop() {
   setInterval(() => { renderList(); }, 30_000);
 }
 
+applyTheme();
 initMap();
 wireSettings();
 wireAlertUI();
